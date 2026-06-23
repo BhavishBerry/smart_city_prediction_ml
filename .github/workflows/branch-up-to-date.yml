@@ -1,0 +1,26 @@
+name: Branch up to date with main
+
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-up-to-date:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify this branch contains the latest main
+        run: |
+          git fetch origin main
+          if git merge-base --is-ancestor origin/main HEAD; then
+            echo "OK: branch is up to date with main."
+          else
+            echo "::error::This branch does not contain the latest commit on main, so it is missing files (e.g. datasets) added there since this branch was created."
+            echo "::error::Fix: git checkout $(git branch --show-current 2>/dev/null || echo '<your-branch>') && git merge origin/main"
+            exit 1
+          fi

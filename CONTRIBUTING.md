@@ -22,9 +22,11 @@ feature/<domain>-<yourname>
 Assigned branches:
 
 - `feature/waste-prediction-bhavish` — Bhavish
-- `feature/traffic-prediction-anshika` — Anshika
+- `feature/traffic-anshika` — Anshika
 - `feature/air-quality-prediction-rishu` — Rishu
 - `feature/parking-prediction-navish` — Navish
+
+(exact branch name doesn't have to match this list character-for-character, but stick to `feature/<domain>-<yourname>`)
 
 ## Daily flow
 
@@ -46,6 +48,21 @@ Then open a Pull Request on GitHub into `main`. Whoever isn't the author gives i
 - Pull `main` before starting work each session: `git checkout main && git pull`.
 - Keep notebooks' outputs cleared before committing (`Kernel > Restart & Clear Output`) to avoid noisy diffs.
 - Don't commit raw datasets or model binaries — `.gitignore` already excludes `data/raw/`, `models/*.pkl`, `*.h5`, etc. Add a small `data/sample.csv` if teammates need something to test against.
+
+## If your branch falls behind main
+
+If `main` gets new commits (e.g. someone adds a dataset or updates docs) after you already created your branch, your branch **will not** automatically have those files — git only shows you what's on the commit you branched from. A GitHub Actions check (`.github/workflows/branch-up-to-date.yml`) runs on every push and PR and will fail with a red ❌ if your branch is behind `main`, specifically to catch this.
+
+If you see that check fail, fix it with:
+
+```bash
+git checkout <your-branch>
+git fetch origin
+git merge origin/main
+git push
+```
+
+Do this any time you pull/start work, not just when the check tells you — it's the same command either way.
 
 ## Once all 4 domains have a baseline model
 
