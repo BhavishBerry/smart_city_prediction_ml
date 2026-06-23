@@ -19,12 +19,12 @@ pip install -r requirements.txt
 feature/<domain>-<yourname>
 ```
 
-Examples already in use / expected:
+Assigned branches:
 
-- `feature/waste-prediction-bhavish`
-- `feature/traffic-prediction-<name>`
-- `feature/air-quality-prediction-<name>`
-- `feature/parking-prediction-<name>`
+- `feature/waste-prediction-bhavish` — Bhavish
+- `feature/traffic-prediction-anshika` — Anshika
+- `feature/air-quality-prediction-rishu` — Rishu
+- `feature/parking-prediction-navish` — Navish
 
 ## Daily flow
 

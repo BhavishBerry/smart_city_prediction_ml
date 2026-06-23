@@ -4,12 +4,16 @@ Summer internship group project: predicting key smart-city signals using classic
 
 ## Team domains
 
-| Domain | Folder | Owner |
-|---|---|---|
-| Traffic flow prediction (simple) | `traffic/` | TBD |
-| Air quality / AQI prediction (simple) | `air_quality/` | TBD |
-| Parking occupancy prediction | `parking/` | TBD |
-| Waste generation prediction | `waste/` | Bhavish |
+| Domain | Folder | Owner | Dataset | Algorithms |
+|---|---|---|---|---|
+| Traffic flow prediction | `traffic/` | Anshika | [Metro Interstate Traffic Volume (UCI)](https://archive.ics.uci.edu/dataset/492/metro+interstate+traffic+volume) | XGBoost/Random Forest (ML) + LSTM (DL) |
+| Air quality / AQI prediction | `air_quality/` | Rishu | [Air Quality (UCI)](https://archive.ics.uci.edu/dataset/360/air+quality) | Random Forest (ML) + LSTM/CNN-LSTM (DL) |
+| Parking occupancy prediction | `parking/` | Navish | [Parking Birmingham (UCI)](https://archive.ics.uci.edu/dataset/482/parking+birmingham) | Random Forest (primary) + LSTM (comparison) |
+| Waste generation prediction | `waste/` | Bhavish | [What a Waste Global Database (World Bank)](https://datacatalog.worldbank.org/search/dataset/0039597/what-a-waste-global-database) | Random Forest/XGBoost (ML) + MLP (DL) |
+
+See [ALGORITHMS.md](ALGORITHMS.md) for the full reasoning behind each dataset and algorithm choice.
+
+All datasets are real, publicly published data — no synthetic or AI-generated data is used anywhere in this repository.
 
 ## Structure
 
