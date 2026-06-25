@@ -116,7 +116,8 @@ def load_traffic_pool():
     df = pd.read_csv(REPO_ROOT / "traffic" / "data" / "Metro_Interstate_Traffic_Volume.csv")
     df = df.drop_duplicates()
     low_q, high_q = df["traffic_volume"].quantile([1 / 3, 2 / 3])
-    return df, float(low_q), float(high_q)
+    p05, p95 = df["traffic_volume"].quantile([0.05, 0.95])
+    return df, float(low_q), float(high_q), float(p05), float(p95)
 
 
 @st.cache_data
@@ -141,7 +142,8 @@ def load_waste_pool():
     df[target] = pd.to_numeric(df[target].astype(str).str.replace(",", "", regex=False), errors="coerce")
     df = df.dropna(subset=[target])
     income_group_means = df.groupby("income_id")[target].mean().to_dict()
-    return df, income_group_means
+    p95 = float(df[target].quantile(0.95))
+    return df, income_group_means, p95
 
 
 # ---------------------------------------------------------------------------
@@ -240,34 +242,107 @@ def sample_waste_reading(model, imputer, feature_columns, pool):
 
 
 STATUS_COLORS = {"Low": "🟢", "Good": "🟢", "Moderate": "🟡", "High": "🔴", "Poor": "🔴", "Near Full": "🔴"}
+STATUS_OK = {"Low", "Good"}
+STATUS_SEVERE = {"High", "Poor", "Near Full"}
+
+MODEL_INFO = {
+    "traffic": {
+        "algorithm": "Random Forest Regressor",
+        "score": "R² = 0.96",
+        "value": "Forecasts hourly traffic volume so signal timing and rerouting can be adjusted "
+        "ahead of congestion building, instead of reacting after gridlock has already formed.",
+    },
+    "air": {
+        "algorithm": "Random Forest Regressor",
+        "score": "R² = 0.94",
+        "value": "Predicts CO concentration from co-located sensor readings, catching pollution "
+        "spikes early enough to issue health advisories before air quality turns unsafe.",
+    },
+    "parking": {
+        "algorithm": "Random Forest Regressor (autoregressive)",
+        "score": "R² = 0.997",
+        "value": "Predicts each car park's next occupancy reading from its recent trend, so drivers "
+        "can be guided to open lots before they arrive and start circling for a spot.",
+    },
+    "waste": {
+        "algorithm": "XGBoost Regressor",
+        "score": "R² = 0.81 (5-fold CV: 0.78)",
+        "value": "Forecasts annual waste generation per city, so collection routes and truck "
+        "dispatch can be planned ahead of overflow rather than after residents complain.",
+    },
+}
+
+ACTIONS = {
+    ("traffic", "Low"): "Traffic flowing normally — no action needed.",
+    ("traffic", "Moderate"): "Traffic building. Keep monitoring for further increases.",
+    ("traffic", "High"): "⚠ Recommended action: extend green-light duration on main corridors and "
+    "push a reroute alert to the city traffic app.",
+    ("air", "Good"): "Air quality safe — no action needed.",
+    ("air", "Moderate"): "Air quality declining. Watch sensitive areas (schools, hospitals).",
+    ("air", "Poor"): "⚠ Recommended action: issue a public health advisory and consider temporary "
+    "heavy-vehicle restrictions.",
+    ("parking", "Low"): "Ample space available — no action needed.",
+    ("parking", "Moderate"): "Lot filling up. Keep monitoring.",
+    ("parking", "Near Full"): "⚠ Recommended action: redirect incoming traffic to nearby lots with "
+    "availability via signage/app.",
+    ("waste", "Low"): "Generation within normal range for this income bracket.",
+    ("waste", "Moderate"): "Slightly above average for this income bracket. Keep monitoring.",
+    ("waste", "High"): "⚠ Recommended action: schedule an additional collection run for this zone "
+    "this week.",
+}
 
 
-def render_card(col, title, icon, reading, status, history_key):
+def render_card(col, domain, title, icon, reading, status, history_key):
     with col:
         with st.container(border=True):
+            info = MODEL_INFO[domain]
             st.markdown(f"#### {icon} {title}")
+            st.caption(f"{info['algorithm']} • {info['score']}")
+
             badge = STATUS_COLORS.get(status, "⚪")
-            st.markdown(f"**Status:** {badge} {status}")
+            st.markdown(f"**Status: {badge} {status}**")
             st.metric("Predicted value", reading["display"])
+
+            gauge = max(0.0, min(1.0, reading.get("gauge", 0.0)))
+            st.progress(gauge)
+
+            action = ACTIONS.get((domain, status), "")
+            if status in STATUS_SEVERE:
+                st.warning(action, icon="⚠️")
+            elif status in STATUS_OK:
+                st.caption(action)
+            else:
+                st.info(action, icon="👀")
+
             st.caption(reading.get("detail", ""))
             st.caption(f"Simulated reading as of {datetime.now().strftime('%H:%M:%S')}")
+
             history = st.session_state.history[history_key]
             if len(history) > 1:
                 st.line_chart(pd.DataFrame(history, columns=["value"]), height=120)
+
+            with st.expander("Why this model?"):
+                st.write(info["value"])
 
 
 # ---------------------------------------------------------------------------
 # Sidebar / mode selection
 # ---------------------------------------------------------------------------
 st.title("\U0001F3D9️ Smart City Maintenance Dashboard")
+st.caption("Predictive monitoring across traffic, air quality, parking, and waste — built to catch problems before they happen, not just report them after.")
 
 mode = st.sidebar.radio("Mode", ["Live City Monitoring", "Manual What-If"])
 
 if mode == "Live City Monitoring":
     st.sidebar.markdown("---")
     auto_refresh = st.sidebar.checkbox("Auto-refresh", value=True)
-    interval = st.sidebar.slider("Refresh interval (seconds)", 2, 15, 5)
+    interval = st.sidebar.slider("Refresh interval (seconds)", 10, 60, 20, step=5)
     force_refresh = st.sidebar.button("Refresh now")
+
+    with st.sidebar.expander("About the models", expanded=False):
+        for domain, info in MODEL_INFO.items():
+            st.markdown(f"**{domain.replace('_', ' ').title()}** — {info['algorithm']}, {info['score']}")
+            st.caption(info["value"])
 
     st.info(
         "**Simulated live feed** - readings below are randomly resampled from the real historical "
@@ -281,10 +356,10 @@ if mode == "Live City Monitoring":
     air_model, air_feature_columns = load_air_quality_model()
     parking_model, parking_encoder, parking_feature_columns, parking_lot_capacity = load_parking_model()
 
-    traffic_pool, traffic_low_q, traffic_high_q = load_traffic_pool()
+    traffic_pool, traffic_low_q, traffic_high_q, traffic_p05, traffic_p95 = load_traffic_pool()
     air_pool = load_air_quality_pool()
     parking_pool = load_parking_pool()
-    waste_pool, waste_income_means = load_waste_pool()
+    waste_pool, waste_income_means, waste_p95 = load_waste_pool()
 
     if auto_refresh:
         count = st_autorefresh(interval=interval * 1000, key="live_counter")
@@ -308,20 +383,24 @@ if mode == "Live City Monitoring":
         else:
             traffic_status = "High"
         traffic_reading["display"] = f"{traffic_reading['value']:,.0f} vehicles/hr"
+        traffic_reading["gauge"] = (traffic_reading["value"] - traffic_p05) / (traffic_p95 - traffic_p05)
 
         air_reading = sample_air_quality_reading(air_model, air_feature_columns, air_pool, now)
         air_status = classify_air_quality(air_reading["value"])
         air_reading["display"] = f"{air_reading['value']:.2f} mg/m3 CO"
+        air_reading["gauge"] = air_reading["value"] / 10.0
 
         parking_reading = sample_parking_reading(parking_model, parking_encoder, parking_feature_columns, parking_pool, now)
         rate = parking_reading["rate"]
         parking_status = "Near Full" if rate > 0.85 else ("Moderate" if rate > 0.5 else "Low")
         parking_reading["display"] = f"{rate * 100:.0f}% full"
+        parking_reading["gauge"] = rate
 
         waste_reading = sample_waste_reading(waste_model, waste_imputer, waste_feature_columns, waste_pool)
         group_mean = waste_income_means.get(waste_reading["income_id"], waste_reading["value"])
         waste_status = "High" if waste_reading["value"] > group_mean * 1.2 else "Moderate" if waste_reading["value"] > group_mean * 0.8 else "Low"
         waste_reading["display"] = f"{waste_reading['value']:,.0f} tons/yr"
+        waste_reading["gauge"] = waste_reading["value"] / waste_p95
 
         st.session_state.current = {
             "traffic": (traffic_reading, traffic_status),
@@ -333,11 +412,18 @@ if mode == "Live City Monitoring":
             st.session_state.history[key].append(st.session_state.current[key][0]["value"])
             st.session_state.history[key] = st.session_state.history[key][-30:]
 
+    statuses = [v[1] for v in st.session_state.current.values()]
+    alert_count = sum(1 for s in statuses if s in STATUS_SEVERE)
+    if alert_count == 0:
+        st.success(f"All systems normal as of {datetime.now().strftime('%H:%M:%S')}.", icon="✅")
+    else:
+        st.warning(f"{alert_count} system(s) need attention as of {datetime.now().strftime('%H:%M:%S')}.", icon="🚨")
+
     c1, c2, c3, c4 = st.columns(4)
-    render_card(c1, "Traffic", "\U0001F697", *st.session_state.current["traffic"], "traffic")
-    render_card(c2, "Air Quality", "\U0001F32B️", *st.session_state.current["air"], "air")
-    render_card(c3, "Parking", "\U0001F17F️", *st.session_state.current["parking"], "parking")
-    render_card(c4, "Waste", "\U0001F5D1️", *st.session_state.current["waste"], "waste")
+    render_card(c1, "traffic", "Traffic", "\U0001F697", *st.session_state.current["traffic"], "traffic")
+    render_card(c2, "air", "Air Quality", "\U0001F32B️", *st.session_state.current["air"], "air")
+    render_card(c3, "parking", "Parking", "\U0001F17F️", *st.session_state.current["parking"], "parking")
+    render_card(c4, "waste", "Waste", "\U0001F5D1️", *st.session_state.current["waste"], "waste")
 
 else:
     tab_waste, tab_traffic, tab_air, tab_parking = st.tabs(["Waste", "Traffic", "Air Quality", "Parking"])
