@@ -9,5 +9,6 @@ jupyter
 fastapi
 uvicorn
 streamlit
+streamlit-autorefresh
 joblib
 requests
