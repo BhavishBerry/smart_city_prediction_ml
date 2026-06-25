@@ -20,4 +20,5 @@ data/processed/*.csv
 models/*.pkl
 models/*.h5
 models/*.joblib
+models/*.json
 !models/.gitkeep
